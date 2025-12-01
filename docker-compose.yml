@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  llama-proxy:
+    build: .
+    container_name: llama-proxy
+    environment:
+      LLAMA_SERVER: "${LLAMA_SERVER}"
+      PORT: "${PORT:-8080}"
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    restart: unless-stopped
+

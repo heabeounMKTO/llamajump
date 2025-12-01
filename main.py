@@ -2,14 +2,17 @@ import requests
 from flask import Flask, request, Response, jsonify, stream_with_context
 import logging
 from datetime import datetime
-
+import os
 
 
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-LLAMA_SERVER = "http://192.168.231.52:9997"
+
+LLAMA_SERVER = os.getenv("LLAMA_SERVER", "http://localhost:9997")
+PORT = int(os.getenv("PORT", "8080"))
+
 
 @app.route('/health')
 def health_check():
@@ -195,7 +198,8 @@ if __name__ == '__main__':
 
     app.run(
         host='0.0.0.0',
-        port=8080,
+        port=PORT,
         debug=False,
         threaded=True
     )
+
