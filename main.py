@@ -10,7 +10,8 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-LLAMA_SERVER = os.getenv("LLAMA_SERVER", "http://localhost:9997")
+# LLAMA_SERVER = os.getenv("LLAMA_SERVER", "http://localhost:9997")
+LLAMA_SERVER = os.getenv("LLAMA_SERVER", "http://192.168.231.52:9997")
 PORT = int(os.getenv("PORT", "8080"))
 
 
@@ -47,52 +48,17 @@ def is_streaming_request():
     )
 
 def proxy_streaming_response(target_url, headers, data):
-    def generate():
-        try:
-            with requests.request(
-                method=request.method,
-                url=target_url,
-                headers=headers,
-                data=data,
-                params=request.args,
-                stream=True,  
-                timeout=(10, None)  # 10s connection timeout and no read timeout
-            ) as resp:
-
-                logger.info(f"[{datetime.now().isoformat()}] Streaming response: {resp.status_code} for {request.method} {request.url}")
-                if resp.status_code != 200:
-                    yield f"HTTP/1.1 {resp.status_code} {resp.reason}\n"
-
-                for chunk in resp.iter_content(chunk_size=1024, decode_unicode=False):
-                    if chunk:
-                        yield chunk
-
-        except requests.exceptions.ConnectionError:
-            logger.error(f"Streaming connection error: Unable to connect to {LLAMA_SERVER}")
-            error_response = {
-                'error': 'Connection error',
-                'message': f'Unable to connect to llama.cpp server at {LLAMA_SERVER}'
-            }
-            yield f"data: {error_response}\n\n"
-
-        except Exception as e:
-            logger.error(f"Streaming proxy error: {str(e)}")
-            error_response = {
-                'error': 'Streaming error',
-                'message': str(e)
-            }
-            yield f"data: {error_response}\n\n"
-
     try:
         resp = requests.request(
             method=request.method,
             url=target_url,
             headers=headers,
             data=data,
-            params=request.args,
             stream=True,
             timeout=(10, None)
         )
+
+        logger.info(f"[{datetime.now().isoformat()}] Streaming response: {resp.status_code} for {request.method} {request.url}")
 
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         response_headers = [
@@ -104,9 +70,14 @@ def proxy_streaming_response(target_url, headers, data):
         response_headers.append(('Connection', 'keep-alive'))
 
         def stream_generator():
-            for chunk in resp.iter_content(chunk_size=1024, decode_unicode=False):
-                if chunk:
-                    yield chunk
+            try:
+                for chunk in resp.iter_content(chunk_size=1024, decode_unicode=False):
+                    if chunk:
+                        yield chunk
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}")
+                error_response = f"data: {{'error': 'Streaming error', 'message': '{str(e)}'}}\n\n"
+                yield error_response.encode('utf-8')
 
         return Response(
             stream_with_context(stream_generator()),
@@ -114,6 +85,13 @@ def proxy_streaming_response(target_url, headers, data):
             headers=response_headers,
             mimetype=resp.headers.get('content-type', 'text/plain')
         )
+
+    except requests.exceptions.ConnectionError:
+        logger.error(f"Streaming connection error: Unable to connect to {LLAMA_SERVER}")
+        return jsonify({
+            'error': 'Connection error',
+            'message': f'Unable to connect to llama.cpp server at {LLAMA_SERVER}'
+        }), 502
 
     except Exception as e:
         logger.error(f"Error setting up streaming: {str(e)}")
@@ -149,7 +127,6 @@ def proxy(path):
             url=target_url,
             headers=headers,
             data=data,
-            params=request.args,
             allow_redirects=False,
             timeout=300  # 5 minutes timeout for non-streaming
         )
@@ -202,4 +179,3 @@ if __name__ == '__main__':
         debug=False,
         threaded=True
     )
-
