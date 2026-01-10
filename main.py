@@ -10,7 +10,6 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# LLAMA_SERVER = os.getenv("LLAMA_SERVER", "http://localhost:9997")
 LLAMA_SERVER = os.getenv("LLAMA_SERVER", "http://192.168.231.52:9997")
 PORT = int(os.getenv("PORT", "8080"))
 
@@ -26,6 +25,10 @@ def health_check():
 
 def is_streaming_request():
     """Check if this is likely a streaming request"""
+    # Don't treat GET requests as streaming by default
+    if request.method == 'GET':
+        return False
+    
     # Check for streaming indicators
     accept_header = request.headers.get('Accept', '')
     stream_param = request.args.get('stream', '').lower()
@@ -128,7 +131,7 @@ def proxy(path):
             headers=headers,
             data=data,
             allow_redirects=False,
-            timeout=300  # 5 minutes timeout for non-streaming
+            timeout=300
         )
 
         logger.info(f"[{datetime.now().isoformat()}] Response: {resp.status_code} for {request.method} {request.url}")
@@ -142,7 +145,8 @@ def proxy(path):
         return Response(
             response=resp.content,
             status=resp.status_code,
-            headers=response_headers
+            headers=response_headers,
+            content_type=resp.headers.get('content-type', 'text/html')
         )
 
     except requests.exceptions.ConnectionError:
@@ -169,8 +173,8 @@ def proxy(path):
 if __name__ == '__main__':
     print(f"Starting streaming proxy server...")
     print(f"Forwarding requests to: {LLAMA_SERVER}")
-    print(f"Proxy will be available at: http://localhost:8080")
-    print(f"Health check: http://localhost:8080/health")
+    print(f"Proxy will be available at: http://localhost:{PORT}")
+    print(f"Health check: http://localhost:{PORT}/health")
     print(f"Streaming support: ENABLED")
 
     app.run(
